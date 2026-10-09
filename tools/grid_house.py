@@ -19,7 +19,7 @@ import v5_house as b
 from v5_house import (P, box, cyl, prism_x, bar, bolt, futorka, steel, place, compound,
                       CUT, HW, PW, H, T, D, PLY, PLY_G, SD, POST, OPEN, LEZ, BEAM, Z0, ZB, ZP,
                       GAP, WC, BH, WOOD, WOOD2, PLYC, FRAME, TAN, COS, SIN)
-from sw2step import save_step
+from step_io import save_step
 
 PITCH = POST + OPEN          # 3100 — шаг сетки
 SPAN_O = D / 2 + PLY         # 28 — ось болтов пролёта от наружной грани

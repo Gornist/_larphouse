@@ -16,7 +16,7 @@ from build123d import (Box, Compound, Cylinder, Face, Location, Vector, Wire,
                        Axis, Align, extrude)
 
 sys.path.insert(0, os.path.dirname(__file__))
-from sw2step import save_step
+from step_io import save_step
 
 MIN = (Align.MIN, Align.MIN, Align.MIN)
 
