@@ -99,50 +99,63 @@ def main(out):
     blocks, house = v.build()
 
     # ---- блоки
-    red = '● красное — замки/штыри'
-    for k, t in [('глухой', 'Глухой ×4'), ('угловой', 'Угловой ×4'),
-                 ('окно', 'Окно ×3'), ('дверь', 'Дверь ×1')]:
+    for k, t in [('глухой', 'Щит глухой ×8'), ('окно', 'Щит «окно» ×3'), ('дверь', 'Щит «дверь» ×1')]:
         pp = blocks[f'щит_{k}']
         render(items_of(pp), f'{out}/щит_{k}_снаружи.png', az=-20, el=12, size=700, title=t + ', снаружи')
         render(items_of(pp), f'{out}/щит_{k}_изнутри.png', az=160, el=12, size=700, title=t + ', изнутри')
+    for k, t in [('окно', 'Пролёт «окно» ×3'), ('дверь', 'Пролёт «дверь» ×1')]:
+        pp = blocks[f'пролёт_{k}']
+        render(items_of(pp), f'{out}/пролёт_{k}_снаружи.png', az=-15, el=10, size=1000, title=t + ', снаружи')
+        render(items_of(pp), f'{out}/пролёт_{k}_изнутри.png', az=165, el=10, size=1000, title=t + ', изнутри (болты)')
+    render(items_of(blocks['стойка_угловая']), f'{out}/стойка_угловая.png', az=-140, el=25, size=500, title='Угловая стойка ×4')
+    for k in ('карнизный', 'фронтонный'):
+        render(items_of(blocks[f'ригель_{k}']), f'{out}/ригель_{k}.png', az=-20, el=35, size=1000, title=f'Ригель {k} ×2')
+    for k in ('X', 'Y'):
+        render(items_of(blocks[f'лежень_{k}']), f'{out}/лежень_{k}.png', az=-20, el=40, size=1000, title=f'Лежень {k} ×2')
     for k, t in [('средняя', 'Полуферма средняя ×2'), ('фронтон_0', 'Полуферма фронтонная «А» ×2'),
                  ('фронтон_25', 'Полуферма фронтонная «Б» ×2')]:
         render(items_of(blocks[f'полуферма_{k}']), f'{out}/полуферма_{k}.png', az=-90, el=0, size=1000, title=t + ' — вид сбоку')
         render(items_of(blocks[f'полуферма_{k}']), f'{out}/полуферма_{k}_изо.png', az=-60, el=25, size=800, title=t)
-    for k in ('карнизная', 'фронтонная'):
-        render(items_of(blocks[f'обвязка_{k}']), f'{out}/обвязка_{k}.png', az=-15, el=35, size=1000,
-               title=f'Обвязка {k} 50×50×3050 ×2')
 
     # ---- шаги монтажа
-    groups = [(g, b, parts) for g, b, parts in house]
     def sel(pred):
-        return [q for g, b, parts in groups if pred(g, b) for q in parts]
+        return [q for g, b, parts in house if pred(g, b) for q in parts]
     base = sel(lambda g, b: g == 'основание')
-    walls = {w: sel(lambda g, b, w=w: g == f'стена_{w}' and not b.startswith('обвязка')) for w in 'ABCD'}
-    plates = sel(lambda g, b: g.startswith('стена') and b.startswith('обвязка'))
-    trusses = sel(lambda g, b: g == 'крыша' and b.startswith('ферма'))
+    posts = sel(lambda g, b: b.startswith('стойка'))
+    beams = sel(lambda g, b: b.startswith('ригель'))
+    spanA = sel(lambda g, b: b.endswith('_A') and g == 'пролёты')
+    spans = sel(lambda g, b: g == 'пролёты')
+    trusses = sel(lambda g, b: b.startswith('ферма'))
     ridge = sel(lambda g, b: b in ('конёк', 'прогон'))
     tent = sel(lambda g, b: b == 'тент')
-    hide = ('анкер',)
+    pivot = Location((0, 0, v.Z0)) * Location((0, 0, 0), (14, 0, 0)) * Location((0, 0, -v.Z0))
+    tilted = [v.P(q.solid.moved(pivot), q.name, q.mat, q.color)
+              for q in sel(lambda g, b: b == 'пролёт_окно_A')]
+    frame = base + posts + beams
     steps = [
-        ('шаг1_основание', 'Шаг 1. Основание: 4 лежня + анкеры', [], base, ['Углы вполдерева на штыри, выровнять подкладками, диагонали равны.']),
-        ('шаг2_стена_A', 'Шаг 2. Первая стена: 3 щита', base, walls['A'], ['Щиты на штыри лежня, стыки — 2 замка, угловой щит справа.']),
-        ('шаг3_стены', 'Шаг 3. Остальные стены по кругу', base + walls['A'], walls['B'] + walls['C'] + walls['D'], ['Каждая стена упирается в стойку предыдущей: 2 замка на угол.']),
-        ('шаг4_обвязки', 'Шаг 4. Обвязки на штыри щитов', base + sum(walls.values(), []), plates, ['Угол обвязок — 1 замок.']),
-        ('шаг5_фермы', 'Шаг 5. Фермы: пары полуферм на земле → наверх', base + sum(walls.values(), []) + plates, trusses,
-         ['Стойки полуферм стянуть болтом с барашком. Пяты — на штыри, R-шплинты.']),
-        ('шаг6_конёк', 'Шаг 6. Конёк и 4 прогона', base + sum(walls.values(), []) + plates + trusses, ridge, ['Конёк — на штыри стоек ферм, прогоны — в лапки.']),
-        ('шаг7_тент', 'Шаг 7. Тент и растяжки', base + sum(walls.values(), []) + plates + trusses + ridge, tent, ['Тент — через конёк, к люверсам/лежням; 4 растяжки.']),
+        ('шаг1_основание', 'Шаг 1. Основание: 4 лежня, 6 анкеров', [], base,
+         ['Углы вполдерева на штыри, выровнять подкладками, диагонали равны.']),
+        ('шаг2_стойки', 'Шаг 2. Угловые стойки в стаканы', base, posts, ['Стойка садится на штырь в углу и стоит сама.']),
+        ('шаг3_ригели', 'Шаг 3. Ригели на стойки — каркас готов', base + posts, beams,
+         ['Углы ригелей вполдерева на штыри стоек.']),
+        ('шаг4_пролёт', 'Шаг 4. Пролёт вставляется снаружи', frame, tilted,
+         ['Низ — на лежень, наклонить в проём до упорных реек, закрыть 8 вертушек.']),
+        ('шаг5_пролёты', 'Шаг 5. Все 4 пролёта', frame, spans, ['Три пролёта «окно», пролёт «дверь» — на фронтон.']),
+        ('шаг6_фермы', 'Шаг 6. Фермы: пары полуферм → на штыри', frame + spans, trusses,
+         ['Пары стянуть барашком на земле. Пяты — на штыри, R-шплинты.']),
+        ('шаг7_конёк', 'Шаг 7. Конёк и 4 прогона', frame + spans + trusses, ridge, ['Конёк — на штыри ферм, прогоны — в лапки.']),
+        ('шаг8_тент', 'Шаг 8. Тент и растяжки', frame + spans + trusses + ridge, tent, ['Тент через конёк, к люверсам; 4 растяжки.']),
     ]
+    hide = ('анкер_штопор',)
     for fn, title, old, new, notes in steps:
-        it = items_of(old, grey=True, sheath_alpha=255, hide=hide) + items_of(new, sheath_alpha=200 if 'тент' in fn else 255)
+        it = items_of(old, grey=True, hide=hide) + items_of(new, sheath_alpha=200 if 'тент' in fn else 255, hide=hide)
         render(it, f'{out}/{fn}.png', az=-35, el=28, size=1000, title=title, notes=notes)
-    allp = base + sum(walls.values(), []) + plates + trusses + ridge + tent
+    allp = frame + spans + trusses + ridge + tent
     render(items_of(allp, hide=hide), f'{out}/дом.png', az=-35, el=22, size=1100, title='Дом v5 в сборе')
     render(items_of(allp, hide=hide + ('тент',)), f'{out}/дом_без_тента.png', az=145, el=30, size=1100,
            title='Без тента (вид с обратной стороны)')
-    fr = items_of(base + plates + trusses + ridge, hide=hide) + items_of(sum(walls.values(), []), hide=hide + ('обшивка', 'полотно'))
-    render(fr, f'{out}/дом_каркас.png', az=-35, el=28, size=1100, title='Каркас без обшивки и тента')
+    render(items_of(frame + trusses + ridge, hide=hide), f'{out}/каркас.png', az=-35, el=28, size=1100,
+           title='Каркас дома с фермами (без пролётов)')
 
 
 if __name__ == '__main__':
