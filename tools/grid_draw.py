@@ -34,5 +34,34 @@ def main(name, out):
                f'{out}/{fn}.png', az=-35, el=28, size=1000, title=t)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__' and sys.argv[1] != 'детали':
     main(sys.argv[1], sys.argv[2])
+
+
+def parts(out):
+    """Картинки всех деталей системы (для ДЕТАЛИ.md)."""
+    import v5_house as b
+    os.makedirs(out, exist_ok=True)
+    blocks3, _, _ = g.build(g.CONFIGS['3х3'])
+    blocks6, _, _ = g.build(g.CONFIGS['6х6'])
+    for k in ('глухой', 'окно', 'дверь'):
+        pp = b.panel(k)
+        render(items_of(pp), f'{out}/щит_{k}_снаружи.png', az=-20, el=12, size=600, title=f'Щит «{k}», снаружи')
+        render(items_of(pp), f'{out}/щит_{k}_изнутри.png', az=160, el=12, size=600, title=f'Щит «{k}», изнутри')
+        sp = blocks6.get(f'пролёт_{k}') or blocks3.get(f'пролёт_{k}')
+        render(items_of(sp), f'{out}/пролёт_{k}.png', az=165, el=10, size=900, title=f'Пролёт «{k}», изнутри (болты стыков)')
+    render(items_of(blocks6['стойка']), f'{out}/стойка.png', az=-140, el=20, size=420, title='Стойка')
+    render(items_of(blocks6['стойка']), f'{out}/стойка_низ.png', az=-140, el=25, size=600, title='Стойка: отверстия')
+    render(items_of(blocks6['лежень']), f'{out}/лежень.png', az=-20, el=40, size=1000, title='Лежень (уголки на концах)')
+    render(items_of(g.beam('x')), f'{out}/обвязка.png', az=-20, el=25, size=1000, title='Обвязка: вдоль конька (уголки внизу)')
+    render(items_of(g.beam('y')), f'{out}/обвязка_перевёрнутая.png', az=-20, el=25, size=1000, title='Обвязка поперёк — перевёрнута (уголки вверху)')
+    for tag, src in (('М', blocks3), ('Б', blocks6)):
+        for k, t in (('средняя', 'средняя'), ('фронтон_0', 'фронтонная А'), ('фронтон_25', 'фронтонная Б')):
+            pp = src[f'полуферма_{tag}_{k}']
+            size = 'малая' if tag == 'М' else 'большая'
+            render(items_of(pp), f'{out}/полуферма_{tag}_{k}.png', az=-90, el=0, size=1000, title=f'Полуферма {size} {t} — сбоку')
+            render(items_of(pp), f'{out}/полуферма_{tag}_{k}_изо.png', az=-60, el=25, size=800, title=f'Полуферма {size} {t}')
+
+
+if __name__ == '__main__' and sys.argv[1] == 'детали':
+    parts(sys.argv[2])

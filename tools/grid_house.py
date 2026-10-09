@@ -88,22 +88,29 @@ def stakes():
     return out
 
 
-def beam(d, eave_mid):
-    """Верхняя обвязка между стойками, на ребро."""
+def beam(d, eave_mid=True):
+    """Верхняя обвязка между стойками, на ребро. Одна деталь на все рёбра:
+    футорки и сверху, и снизу; для рёбер вдоль Y её переворачивают
+    (поворот 180° вокруг поперечной оси) — уголки оказываются на высоте Y."""
+    zc = (ZB + ZP) / 2
     bb = box(2, 2 + BL, 0, BEAM[0], ZB, ZP)
     parts = []
-    for s in (GAP + PW / 2, GAP + 2.5 * PW):
-        bb = bb - cyl(14, (s, SPAN_O, ZB - 1), (s, SPAN_O, ZB + 46))
-        t = cyl(14, (s, SPAN_O, ZB), (s, SPAN_O, ZB + 25)) - cyl(10.5, (s, SPAN_O, ZB - 1), (s, SPAN_O, ZB + 26))
-        parts.append(P(t, 'футорка_М10', 'сталь', (150, 150, 60)))
-        HW['Гайка врезная (футорка) М10'] += 1
-    # футорка сверху посередине — под пяту промежуточной фермы (сверлится во всех обвязках)
-    bb = bb - cyl(14, (OPEN / 2, WC, ZP - 36), (OPEN / 2, WC, ZP + 1))
-    parts.append(futorka(OPEN / 2, WC, ZP))
+    for s_, o in ((GAP + PW / 2, SPAN_O), (OPEN / 2, WC), (GAP + 2.5 * PW, SPAN_O)):
+        for face in (-1, 1):                       # низ: болты пролёта, верх: пята фермы
+            z0 = ZB if face < 0 else ZP
+            bb = bb - cyl(14, (s_, o, z0 + face), (s_, o, z0 - face * 46))
+            zf = (z0, z0 + 25) if face < 0 else (z0 - 25, z0)
+            t = cyl(14, (s_, o, zf[0]), (s_, o, zf[1])) - cyl(10.5, (s_, o, zf[0] - 1), (s_, o, zf[1] + 1))
+            parts.append(P(t, 'футорка_М10', 'сталь', (150, 150, 60)))
+            HW['Гайка врезная (футорка) М10'] += 1
     for right in (False, True):
-        parts.append(angle('верх', Z_ANG[d][1] - 20, TOP_O, Z_ANG[d][1], right))
+        parts.append(angle('верх', Z_ANG['x'][1] - 20, TOP_O, Z_ANG['x'][1], right))
     CUT[('50×100', BL)] += 1
-    return [P(bb, f'обвязка_50х100х{BL}', 'дерево', FRAME)] + parts
+    parts = [P(bb, f'обвязка_50х100х{BL}', 'дерево', FRAME)] + parts
+    if d == 'y':
+        flip = Location((OPEN / 2, 0, zc)) * Location((0, 0, 0), (0, 180, 0)) * Location((-OPEN / 2, 0, -zc))
+        parts = place(parts, flip)
+    return parts
 
 
 def span(kind):
@@ -194,6 +201,7 @@ CONFIGS = {
     '3х3': dict(NX=1, NY=1, S=['окно'], N=['окно'], W=['дверь'], E=['окно']),
     '6х6': dict(NX=2, NY=2, S=['окно', 'окно'], N=['окно', 'окно'], W=['дверь', 'глухой'], E=['окно', 'глухой']),
     '3х6': dict(NX=2, NY=1, S=['окно', 'окно'], N=['глухой', 'окно'], W=['дверь'], E=['окно']),
+    '3х9': dict(NX=3, NY=1, S=['окно', 'окно', 'окно'], N=['глухой', 'окно', 'глухой'], W=['дверь'], E=['окно']),
 }
 
 
@@ -253,7 +261,7 @@ def build(cfg):
                     continue
                 ang_bolts.add(key)
                 head = Location((end_s - 5 if end_s == 0 else end_s + POST + 5, o, z))
-                house.append(('каркас', f'болт_уголка_{nm}_{end_s}',
+                house.append(('основание' if o == ANG_O else 'каркас', f'болт_уголка_{"низ" if o == ANG_O else "верх"}_{nm}_{end_s}',
                               place([bolt((0, 0, 0), (1, 0, 0) if end_s == 0 else (-1, 0, 0), 130, 'барашек')], loc * head)))
     # крыша
     r = ROOFS[NY]
@@ -422,6 +430,115 @@ def bom(name, cfg, blocks, house, dims, out):
     return s, total_mass
 
 
+LETTER = {'окно': 'О', 'глухой': 'Г', 'дверь': 'Д'}
+
+
+def ascii_plan(cfg):
+    """План сверху: ■ стойки, буквы — пролёты (О окно, Г глухой, Д дверь), · — открытый проём."""
+    NX, NY, w = cfg['NX'], cfg['NY'], 12
+    rows = []
+    for j in range(NY, -1, -1):
+        line = ''
+        for i in range(NX):
+            k = cfg['S'][i] if j == 0 else cfg['N'][NX - 1 - i] if j == NY else None
+            mid = LETTER[k] if k else '·'
+            line += '■' + '─' * (w // 2 - 1) + mid + '─' * (w // 2 - 1)
+        rows.append(line + '■')
+        if j > 0:
+            for r_ in range(3):
+                line = ''
+                for i in range(NX + 1):
+                    k = cfg['W'][NY - j] if i == 0 else cfg['E'][j - 1] if i == NX else None
+                    ch = (LETTER[k] if k else '·') if r_ == 1 else '│'
+                    line += ch + (' ' * (w - 1) if i < NX else '')
+                rows.append(line)
+    return '\n'.join(rows)
+
+
+T_MIN = dict(setup=10, post=3, lez=3, beam=4, span=6, truss_m=5, truss_b=8, ridge_bay=6, tent_bay=8)
+
+
+def assembly(name, cfg, house, dims, out):
+    NX, NY = cfg['NX'], cfg['NY']
+    cnt = collections.Counter()
+    bolts = collections.Counter()
+    for gr, b_, parts in house:
+        for k in ('стойка', 'лежень', 'обвязка', 'ферма', 'конёк', 'прогон'):
+            if b_.startswith(k):
+                cnt[k] += 1
+        if b_.startswith('пролёт_'):
+            cnt['пролёт ' + b_.split('_')[1]] += 1
+            continue                                   # болты внутри пролёта — мастерская
+        for q in parts:
+            if q.name.startswith('болт'):
+                bolts[(gr if not b_.startswith('ферма') else 'крыша', q.name.split('_')[1])] += 1
+    x_beams = NX * (NY + 1)
+    y_beams = (NX + 1) * NY
+    trusses = cnt['ферма']
+    big = NY == 2
+    t = collections.OrderedDict()
+    t['Раскладка, разметка'] = T_MIN['setup']
+    t['Лежни'] = T_MIN['lez'] * cnt['лежень']
+    t['Стойки (+ колья)'] = T_MIN['post'] * cnt['стойка'] + 5
+    t['Верхняя обвязка'] = T_MIN['beam'] * cnt['обвязка']
+    t['Пролёты'] = T_MIN['span'] * sum(v for k, v in cnt.items() if k.startswith('пролёт'))
+    t['Фермы'] = (T_MIN['truss_b'] if big else T_MIN['truss_m']) * trusses
+    t['Конёк, прогоны'] = T_MIN['ridge_bay'] * NX
+    t['Тент, ремни'] = T_MIN['tent_bay'] * NX + 5
+    total = sum(t.values())
+    spans = ', '.join(f'{v} × «{k.split()[1]}»' for k, v in cnt.items() if k.startswith('пролёт'))
+    L = [f'# Сборка дома {name}', '',
+         f'![Дом {name}](img/дом.png)', '',
+         f'Каркас {dims[0] / 1000:.1f} × {dims[1] / 1000:.1f} м, высота до конька {dims[2] / 1000:.2f} м. '
+         f'Сетка {NX} × {NY} клеток. Общие правила и описание каждой детали — '
+         '[../МОНТАЖ.md](../МОНТАЖ.md) и [../ДЕТАЛИ.md](../ДЕТАЛИ.md). '
+         'Что купить и сколько стоит — [СПЕЦИФИКАЦИЯ_И_СМЕТА.md](СПЕЦИФИКАЦИЯ_И_СМЕТА.md).', '',
+         '## План', '', 'Вид сверху, север — сверху, конёк — вдоль длинной стороны (слева направо). '
+         '■ — стойка; О — пролёт с окном, Г — глухой, Д — с дверью, · — открытый проём.', '',
+         '```', ascii_plan(cfg), '```', '',
+         '## Комплект', '', '| Что | Шт. |', '|---|---|',
+         f'| Стойки | {cnt["стойка"]} |', f'| Лежни | {cnt["лежень"]} |',
+         f'| Верхние обвязки | {cnt["обвязка"]} (вдоль конька — {x_beams}, поперёк — {y_beams}, перевёрнутые) |',
+         f'| Пролёты | {spans} |',
+         f'| Фермы ({"большие" if big else "малые"}) | {trusses}: 2 фронтонные (А+Б), {trusses - 2} средних |',
+         f'| Конёк / прогоны | {cnt["конёк"]} / {cnt["прогон"]} куск. |',
+         '', '## Порядок', '']
+    steps = [
+        ('шаг1_каркас', f'**Лежни и стойки.** Разложить {cnt["лежень"]} лежней по плану (уголками внутрь клеток), '
+                        f'выровнять подкладками. Ставить стойки от угла: каждая — между концами лежней, болты '
+                        f'М10×130 сквозь стойку в уголки ({bolts[("основание", "М10х130")]} шт.). Диагонали каждой клетки равны (≈ 4525). Колья — в лежни по периметру.'),
+        (None, f'**Верхняя обвязка.** {x_beams} обвязок вдоль конька — уголками вниз; {y_beams} поперёк — '
+               f'перевернуть (уголками вверх). Болт М10×130 сквозь стойку на каждый конец ({bolts[("каркас", "М10х130")]} шт.; в середине стены и в '
+               'центре один болт держит два уголка).'),
+        ('шаг2_пролёты', f'**Пролёты** ({spans}) — по плану: на лежень между стойками, 4 болта М10×150 сквозь '
+                         'стойки (барашки изнутри) + 2 болта М10×80 изнутри снизу в футорки обвязки.'),
+        ('шаг3_фермы', f'**Фермы** ({trusses} шт.): пары полуферм на земле, болт М10×130 с барашком. Крайние — над '
+                       'торцами (фанерой наружу), остальные через 1,55 м. Пяты — болтами М10×80 в футорки: на линиях '
+                       'стоек — в верх стоек, между ними — в середину обвязок.' + (
+                           ' Большие фермы поднимать втроём; средняя линия стоек держит их под коньком.' if big else '')),
+        ('шаг4_крыша', f'**Конёк** ({cnt["конёк"]} куск.) на верх ферм — бобышками по бокам; **прогоны** '
+                       f'({cnt["прогон"]} куск.) — в лапки стропил; **тент** через конёк, края к люверсам/лежням; '
+                       f'**ремни** ({2 * max(1, NX)} шт.) через крышу под лежни.'),
+    ]
+    for i, (img, txt) in enumerate(steps, 1):
+        L.append(f'{i}. {txt}')
+        if img:
+            L += ['', f'   ![]({"img/" + img}.png)', '']
+    L += ['', '## Болты на площадке', '', '| Болт | Где | Шт. |', '|---|---|---|']
+    where = {'основание': 'уголки лежней (низ стоек)', 'каркас': 'уголки обвязок (верх стоек)', 'пролёты': 'пролёты к стойкам и обвязке', 'крыша': 'фермы'}
+    for (gr, k), n in sorted(bolts.items()):
+        L.append(f'| {k.replace("х", "×")} | {where.get(gr, gr)} | {n} |')
+    L += [f'| | **всего** | **{sum(bolts.values())}** |', '',
+          '## Время (2 человека, оценка)', '', '| Этап | Мин |', '|---|---|']
+    L += [f'| {k} | {v} |' for k, v in t.items()]
+    L += [f'| **Итого** | **≈ {total} ({total / 60:.1f} ч)** |', '',
+          'Время — оценка по нормам на операцию, вживую не проверено. Втроём — примерно на треть быстрее.', '',
+          '## Разборка', '', 'Обратный порядок: ремни, тент → прогоны, конёк → фермы (разобрать на полуфермы) → '
+          'пролёты → обвязка → стойки → колья, лежни.', '']
+    open(f'{out}/СБОРКА.md', 'w').write('\n'.join(L))
+    return total
+
+
 def export(name, out):
     cfg = CONFIGS[name]
     blocks, house, dims = build(cfg)
@@ -433,13 +550,14 @@ def export(name, out):
     top.label = f'дом_{name}'
     save_step(top, f'{out}/дом_{name}.step')
     cost, mass = bom(name, cfg, blocks, house, dims, out)
-    return blocks, house, dims, cost, mass
+    minutes = assembly(name, cfg, house, dims, out)
+    return blocks, house, dims, cost, mass, minutes
 
 
 if __name__ == '__main__':
     name, out = sys.argv[1], sys.argv[2]
-    blocks, house, dims, cost, mass = export(name, out)
-    print(name, [round(x) for x in dims], f'{cost:,.0f} ₽', f'{mass:.0f} кг')
+    blocks, house, dims, cost, mass, minutes = export(name, out)
+    print(name, [round(x) for x in dims], f'{cost:,.0f} ₽', f'{mass:.0f} кг', f'{minutes} мин')
     if len(sys.argv) > 3:          # блоки — один раз для системы
         os.makedirs(sys.argv[3], exist_ok=True)
         for k, parts in blocks.items():
