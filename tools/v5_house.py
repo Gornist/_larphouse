@@ -29,9 +29,8 @@ SD = D + PLY                 # толщина пролёта
 POST = 100                   # угловая стойка 100×100
 OPEN = 3000                  # проём между стойками
 SIZE = OPEN + 2 * POST       # 3200 — габарит каркаса
-LEZ = 50                     # лежень 50×150 (высота 50)
+LEZ = 50                     # лежень 50×100 плашмя (высота 50)
 BEAM = (50, 100)             # ригель 50×100 на ребро
-STOP = 25                    # упорная рейка 25×25
 Z0 = LEZ                     # низ пролёта = верх лежня
 ZB = Z0 + H + 10             # низ ригеля (зазор 10 над пролётом)
 ZP = ZB + BEAM[1]            # верх ригеля = низ затяжек
@@ -135,8 +134,11 @@ def panel(kind):
     parts += [bar('стойка_щита_25х50х2400', '25×50', H, left),
               bar('стойка_щита_25х50х2400', '25×50', H, right)]
     cross = PW - 2 * T
-    for z0 in (0, H - T):
-        parts.append(bar(f'перемычка_25х50х{cross}', '25×50', cross, box(T, PW - T, 0, D, z0, z0 + T), WOOD2))
+    top = box(T, PW - T, 0, D, H - T, H)
+    if kind == 'глухой':
+        top = top - cyl(BH, (PW / 2, D / 2, H - T - 1), (PW / 2, D / 2, H + 1))
+    parts.append(bar(f'перемычка_25х50х{cross}', '25×50', cross, box(T, PW - T, 0, D, 0, T), WOOD2))
+    parts.append(bar(f'перемычка_25х50х{cross}', '25×50', cross, top, WOOD2))
     cut = None
     if kind == 'окно':
         for z0 in (1187.5, 2187.5):
@@ -174,94 +176,109 @@ def door_leaf(a, b):
 
 
 def span(mid):
-    """Пролёт: глухой + mid + глухой, на стыках по 3 болта М10×70 с гайкой."""
+    """Пролёт: глухой + mid + глухой, на стыках по 3 болта М10×80 с гайкой."""
     parts = []
     for i, k in enumerate(('глухой', mid, 'глухой')):
         parts += place(panel(k), Location((i * PW, 0, 0)))
     for i in (1, 2):
         for z in BOLT_Z:
-            parts.append(bolt((i * PW - T, D / 2, z), (1, 0, 0), 70, 'гайка'))
+            parts.append(bolt((i * PW - T, D / 2, z), (1, 0, 0), 80, 'гайка'))
     return parts
 
 
 # ------------------------------------------------------------------ каркас
-PL = ZB - Z0 - 2             # стойка стоит на дне опоры бруса (2 мм)
+# Узел «брус к стойке»: стальной уголок 90×90×40, одна полка прикручена к брусу
+# (лежню или верхней обвязке), другая — к грани стойки болтом М10×130 сквозь стойку.
+# Болты левого конца стены идут по оси x стойки, правого — по y (на разной высоте).
+PL = ZP                      # стойка от земли до верха обвязки
+BOT_Z = (80, 115)            # болты уголков лежней: левый конец / правый
+TOP_Z = (ZB + 25, ZB + 75)   # болты уголков верхней обвязки (уголки на разной высоте)
+ANG_O = (57, 97)             # уголок лежня по глубине (за пролётом)
+SPAN_O = SD / 2 + PLY / 2    # 29 — ось болтов пролёта
 
 
 def post():
-    """Угловая стойка 100×100 в своих координатах: наружные грани x=0, y=0; z=0 — низ."""
+    """Угловая стойка 100×100 в своих координатах: наружные грани x=0, y=0; z=0 — земля."""
     b = box(0, POST, 0, POST, 0, PL)
-    b = b - cyl(BH, (77, -1, 75), (77, POST + 1, 75))                    # болт опоры
-    b = b - cyl(14, (WC, WC, PL - 35), (WC, WC, PL + 1))                  # футорка сверху (отв. глубже)
-    for z in (598, 1798):                                                # болты пролёта по x
-        b = b - cyl(BH, (-1, SD / 2 + PLY / 2, z), (POST + 1, SD / 2 + PLY / 2, z))
-    for z in (698, 1898):                                                # болты пролёта по y
-        b = b - cyl(BH, (SD / 2 + PLY / 2, -1, z), (SD / 2 + PLY / 2, POST + 1, z))
-    parts = [bar(f'стойка_угловая_100х100х{PL}', '100×100', PL, b, FRAME), futorka(WC, WC, PL)]
-    z0, z1 = 155, ZB - 30 - Z0 - 2
-    for bx in (box(POST, POST + STOP, SD, SD + STOP, z0, z1), box(SD, SD + STOP, POST, POST + STOP, z0, z1)):
-        parts.append(bar(f'рейка_упорная_25х25х{z1 - z0}', '25×25', z1 - z0, bx, WOOD2))
-    # опора бруса 100×100 (П-образная): дно + 2 щеки
-    op = box(0, POST, 0, POST, -2, 0) + box(0, POST, -2, 0, -2, 150) + box(0, POST, POST, POST + 2, -2, 150)
-    op = op - cyl(BH, (77, -3, 75), (77, POST + 3, 75))
-    parts.append(steel(op, 'опора_бруса_100х100'))
-    HW['Опора бруса открытая 100×100 (П-образная)'] += 1
-    parts.append(bolt((77, -4, 75), (0, 1, 0), 130, 'барашек'))
-    return parts
+    holes = [((-1, 77, BOT_Z[0]), (POST + 1, 77, BOT_Z[0])), ((77, -1, BOT_Z[1]), (77, POST + 1, BOT_Z[1])),
+             ((-1, 75, TOP_Z[0]), (POST + 1, 75, TOP_Z[0])), ((75, -1, TOP_Z[1]), (75, POST + 1, TOP_Z[1]))]
+    for z in (650, 1850):
+        holes.append(((-1, SPAN_O, z), (POST + 1, SPAN_O, z)))
+    for z in (750, 1950):
+        holes.append(((SPAN_O, -1, z), (SPAN_O, POST + 1, z)))
+    for p0, p1 in holes:
+        b = b - cyl(BH, p0, p1)
+    b = b - cyl(14, (WC, WC, PL - 36), (WC, WC, PL + 1))                  # футорка под пяту фермы
+    return [bar(f'стойка_угловая_100х100х{PL}', '100×100', PL, b, FRAME), futorka(WC, WC, PL)]
+
+
+def angle(s0, o0, o1, z0, kind):
+    """Уголок 90×90×40 (3 мм) у грани стойки s=0. kind: 'низ' — полка на брусе сверху,
+    'верх' — полка на внутренней грани обвязки."""
+    HW['Уголок крепёжный усиленный 90×90×40'] += 1
+    if kind == 'низ':
+        u = box(0, 3, o0, o1, z0, z0 + 90) + box(0, 90, o0, o1, z0, z0 + 3)
+    else:
+        u = box(0, 3, BEAM[0], BEAM[0] + 90, z0, z0 + 40) + box(0, 90, BEAM[0], BEAM[0] + 3, z0, z0 + 40)
+    return P(u.moved(Location((s0, 0, 0))), 'уголок_90х90х40', 'сталь', (90, 90, 100))
+
+
+def mirror_s(parts, L):
+    """Отразить детали вдоль s (для уголка на правом конце бруса длиной L)."""
+    from build123d import Plane, mirror
+    return [P(mirror(q.solid, Plane.YZ).moved(Location((L, 0, 0))), q.name, q.mat, q.color) for q in parts]
+
+
+def frame_bolts():
+    """Болты уголков к стойке, в координатах стойки (head — снаружи, наружу x=0 / y=0)."""
+    return [bolt((0, 77, BOT_Z[0]), (1, 0, 0), 130, 'барашек'), bolt((77, 0, BOT_Z[1]), (0, 1, 0), 130, 'барашек'),
+            bolt((0, 75, TOP_Z[0]), (1, 0, 0), 130, 'барашек'), bolt((75, 0, TOP_Z[1]), (0, 1, 0), 130, 'барашек')]
 
 
 def span_bolts():
-    """Болты пролётов к стойке (в координатах стойки): по x — 600/1800, по y — 700/1900."""
-    y = SD / 2 + PLY / 2
-    return ([bolt((0, y, z), (1, 0, 0), 150, 'барашек') for z in (598, 1798)] +
-            [bolt((y, 0, z), (0, 1, 0), 150, 'барашек') for z in (698, 1898)])
+    """Болты пролётов к стойке (в координатах стойки): по x — 650/1850, по y — 750/1950."""
+    return ([bolt((0, SPAN_O, z), (1, 0, 0), 150, 'барашек') for z in (650, 1850)] +
+            [bolt((SPAN_O, 0, z), (0, 1, 0), 150, 'барашек') for z in (750, 1950)])
 
 
-LW = 150                     # лежень 50×150
+BL = OPEN - 4                # лежень и обвязка между стойками, зазор 2 мм
 
 
-def lezhen(lower):
-    """Лежень 50×150×3200 вдоль X, наружная грань y=0. lower — нижний в нахлёсте."""
-    b = box(0, SIZE, 0, LW, 0, LEZ)
+def lezhen():
+    """Лежень 50×100 между стойками: s от грани левой стойки, o от наружной грани."""
+    b = box(2, 2 + BL, 0, 100, 0, LEZ)
     parts = []
-    for a in (0, SIZE - LW):
-        b = b - (box(a, a + LW, -1, LW + 1, 25, LEZ + 1) if lower else box(a, a + LW, -1, LW + 1, -1, 25))
-    for cx in (125, SIZE - 125):
-        if lower:
-            b = b - cyl(14, (cx, 125, -1), (cx, 125, 26))
-            parts.append(futorka(cx, 125, 25))
-        else:
-            b = b - cyl(BH, (cx, 125, 24), (cx, 125, LEZ + 1))
-            parts.append(bolt((cx, 125, LEZ), (0, 0, -1), 50, 'футорка'))
-    if lower:
-        for x in (300, SIZE / 2, SIZE - 300):
-            b = b - cyl(14, (x, 115, -1), (x, 115, LEZ + 1))
-            parts.append(steel(cyl(12, (x, 115, LEZ - 1000), (x, 115, LEZ)), 'арматура_12х1000'))
-            HW['Арматура Ø12 А500С, пруток 1 м (кол)'] += 1
-    name = 'лежень_X' if lower else 'лежень_Y'
-    CUT[('50×150', SIZE)] += 1
-    parts.insert(0, P(b, f'{name}_50х150х{SIZE}', 'дерево', FRAME))
-    parts.append(bar(f'рейка_упорная_25х25х{SIZE - 2 * LW}', '25×25', SIZE - 2 * LW,
-                     box(LW, SIZE - LW, SD, SD + STOP, LEZ, LEZ + STOP), WOOD2))
+    for s in (500, OPEN - 500):
+        b = b - cyl(14, (s, 77, -1), (s, 77, LEZ + 1))
+        parts.append(steel(cyl(12, (s, 77, LEZ - 1000), (s, 77, LEZ)), 'арматура_12х1000'))
+        HW['Арматура Ø12 А500С, пруток 1 м (кол)'] += 1
+    for k, z in ((0, BOT_Z[0]), (1, BOT_Z[1])):
+        a = [angle(0, *ANG_O, LEZ, 'низ')]
+        a[0].solid = a[0].solid - cyl(BH, (-1, 77, z), (4, 77, z))
+        parts += a if k == 0 else mirror_s(a, OPEN)
+    CUT[('50×100', BL)] += 1
+    parts.insert(0, P(b, f'лежень_50х100х{BL}', 'дерево', FRAME))
     return parts
 
 
 def beam(eave):
-    """Ригель (верхняя обвязка) 50×100×3200 на стойках, вдоль X, наружная грань y=0."""
-    b = box(0, SIZE, 0, BEAM[0], ZB, ZP)
-    for a in (0, SIZE - BEAM[0]):
-        b = b - (box(a, a + BEAM[0], -1, BEAM[0] + 1, ZB + 50, ZP + 1) if eave
-                 else box(a, a + BEAM[0], -1, BEAM[0] + 1, ZB - 1, ZB + 50))
-        b = b - cyl(BH, (a + WC, WC, ZB - 1), (a + WC, WC, ZP + 1))
+    """Верхняя обвязка 50×100 между стойками, на ребро."""
+    b = box(2, 2 + BL, 0, BEAM[0], ZB, ZP)
     parts = []
-    if eave:      # футорка под болт пяты средней фермы
-        b = b - cyl(14, (SIZE / 2, WC, ZP - 31), (SIZE / 2, WC, ZP + 1))
-        parts.append(futorka(SIZE / 2, WC, ZP))
-    CUT[('50×100', SIZE)] += 1
-    parts.insert(0, P(b, f'обвязка_верхняя_{"карнизная" if eave else "фронтонная"}_50х100х{SIZE}', 'дерево', FRAME))
-    r = box(POST, SIZE - POST, SD, SD + STOP, ZB - 30, ZB) + box(POST, SIZE - POST, BEAM[0], SD + STOP, ZB, ZB + 25)
-    CUT[('25×50', OPEN)] += 1
-    parts.append(P(r, f'рейка_упорная_Г_{OPEN}', 'дерево', WOOD2))
+    for s in (GAP + PW / 2, GAP + 2.5 * PW):             # футорки снизу — болты пролёта
+        b = b - cyl(14, (s, SPAN_O, ZB - 1), (s, SPAN_O, ZB + 46))
+        t = cyl(14, (s, SPAN_O, ZB), (s, SPAN_O, ZB + 25)) - cyl(10.5, (s, SPAN_O, ZB - 1), (s, SPAN_O, ZB + 26))
+        parts.append(P(t, 'футорка_М10', 'сталь', (150, 150, 60)))
+        HW['Гайка врезная (футорка) М10'] += 1
+    if eave:                                            # футорка сверху — пята средней фермы
+        b = b - cyl(14, (OPEN / 2, WC, ZP - 36), (OPEN / 2, WC, ZP + 1))
+        parts.append(futorka(OPEN / 2, WC, ZP))
+    for k, z in ((0, TOP_Z[0]), (1, TOP_Z[1])):
+        a = [angle(0, 0, 0, z - 20, 'верх')]
+        a[0].solid = a[0].solid - cyl(BH, (-1, 75, z), (4, 75, z))
+        parts += a if k == 0 else mirror_s(a, OPEN)
+    CUT[('50×100', BL)] += 1
+    parts.insert(0, P(b, f'обвязка_верхняя_{"карнизная" if eave else "фронтонная"}_50х100х{BL}', 'дерево', FRAME))
     return parts
 
 
@@ -352,14 +369,15 @@ def build():
 
     for wn, (rot, org) in SIDES.items():
         loc = Location((org[0], org[1], 0), (0, 0, rot))
-        lower = wn in 'AC'
-        house.append(('основание', f'лежень_{wn}', place(blk('лежень_X' if lower else 'лежень_Y', lezhen(lower)), loc)))
-        ploc = loc * Location((0, 0, Z0 + 2))
-        house.append(('каркас', f'стойка_{wn}', place(blk('стойка_угловая', post()), ploc)))
-        house.append(('пролёты', f'болты_пролётов_{wn}', place(span_bolts(), ploc)))
-        house.append(('каркас', f'обвязка_{wn}', place(blk('обвязка_карнизная' if EAVE[wn] else 'обвязка_фронтонная', beam(EAVE[wn])), loc)))
+        house.append(('основание', f'лежень_{wn}', place(blk('лежень', lezhen()), loc * Location((POST, 0, 0)))))
+        house.append(('каркас', f'стойка_{wn}', place(blk('стойка_угловая', post()), loc)))
+        house.append(('каркас', f'болты_уголков_{wn}', place(frame_bolts(), loc)))
+        house.append(('каркас', f'обвязка_{wn}', place(blk('обвязка_карнизная' if EAVE[wn] else 'обвязка_фронтонная', beam(EAVE[wn])),
+                                                          loc * Location((POST, 0, 0)))))
         sp = blk(f'пролёт_{SPAN_OF[wn]}', span(SPAN_OF[wn]))
         house.append(('пролёты', f'пролёт_{SPAN_OF[wn]}_{wn}', place(sp, loc * Location((POST + GAP, PLY, Z0)))))
+        top_b = [bolt((POST + GAP + s_, SPAN_O, Z0 + H - T), (0, 0, 1), 80, 'футорка') for s_ in (PW / 2, 2.5 * PW)]
+        house.append(('пролёты', f'болты_пролётов_{wn}', place(span_bolts(), loc) + place(top_b, loc)))
     saved = CUT.copy(), HW.copy()     # щиты-образцы для блоки/ не входят в раскрой
     for k in ('глухой', 'окно', 'дверь'):
         blk(f'щит_{k}', panel(k))
@@ -372,8 +390,8 @@ def build():
         tr = place(south, Location((x0, Y_RIDGE, ZP))) + place(north, Location((x0 + T, Y_RIDGE, ZP), (0, 0, 180)))
         zb = ZP + (D + HK) / 2
         tr.append(bolt((x0 + T / 2, Y_RIDGE - D, zb), (0, 1, 0), 130, 'барашек'))
-        for yy in (WC, SIZE - WC):          # пяты: у крайних — в футорку стойки, у средней — ригеля
-            tr.append(bolt((x0 + T / 2, yy, ZP + D), (0, 0, -1), 180 if j != 1 else 80, 'футорка'))
+        for yy in (WC, SIZE - WC):          # пяты: у крайних — в футорку стойки, у средней — обвязки
+            tr.append(bolt((x0 + T / 2, yy, ZP + D), (0, 0, -1), 80, 'футорка'))
         house.append(('крыша', f'ферма_{j + 1}', tr))
     zr = ZP + HK
     RL = SIZE + 2 * OVH
@@ -439,7 +457,7 @@ def write_bom(out, blocks, house):
           'Для мастерской: клей ПВА D3, саморезы 3,5×25 (обшивка), 4×40 (косынки, рейки), '
           '5×70 (узлы рам), антисептик; сверло по дереву Ø11 (под болты) и Ø14 (под футорки).', '',
           '## Массы блоков', '', '| Блок | Шт. | Масса, кг |', '|---|---|---|']
-    cnt = {'стойка_угловая': 4, 'лежень_X': 2, 'лежень_Y': 2, 'обвязка_карнизная': 2,
+    cnt = {'стойка_угловая': 4, 'лежень': 4, 'обвязка_карнизная': 2,
            'обвязка_фронтонная': 2, 'щит_глухой': 8, 'щит_окно': 3, 'щит_дверь': 1,
            'пролёт_окно': 3, 'пролёт_дверь': 1, 'конёк': 1, 'прогон': 4}
     for name, parts in blocks.items():
