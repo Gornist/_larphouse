@@ -1,0 +1,13 @@
+[project]
+name = "larphouse"
+version = "6.0"
+description = "Модульные игровые дома: параметрическая модель, сметы, инструкции, картинки"
+requires-python = ">=3.11"
+dependencies = ["build123d", "numpy", "pillow"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
