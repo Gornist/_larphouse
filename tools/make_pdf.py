@@ -8,11 +8,14 @@ import os, re, subprocess, sys, tempfile
 ORDER = ['README.md', 'ДЕТАЛИ.md', 'МОНТАЖ.md', '3х3/СБОРКА.md', '3х6/СБОРКА.md', '3х9/СБОРКА.md',
          '6х6/СБОРКА.md', 'ЗАКУПКА.md', '3х3/СПЕЦИФИКАЦИЯ_И_СМЕТА.md', '3х6/СПЕЦИФИКАЦИЯ_И_СМЕТА.md',
          '3х9/СПЕЦИФИКАЦИЯ_И_СМЕТА.md', '6х6/СПЕЦИФИКАЦИЯ_И_СМЕТА.md']
-CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'
+CHROME = next((p for p in ('/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+                           '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                           '/Applications/Chromium.app/Contents/MacOS/Chromium') if os.path.exists(p)),
+              'chromium')
 
 CSS = """
 @page { size: A4; margin: 14mm 12mm 16mm 12mm; }
-body { font-family: 'DejaVu Sans', sans-serif; font-size: 10pt; line-height: 1.4; color: #222; }
+body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #222; }
 h1 { font-size: 19pt; border-bottom: 2px solid #8a5a2b; padding-bottom: 4px; margin-top: 0; }
 h2 { font-size: 14pt; color: #5a3a1b; margin-top: 18px; }
 h3 { font-size: 12pt; }
@@ -22,7 +25,7 @@ th { background: #f1e7da; }
 img { max-width: 100%; max-height: 120mm; }
 td img { max-height: 70mm; }
 pre { background: #f6f3ee; padding: 8px; font-size: 9pt; line-height: 1.15; page-break-inside: avoid; }
-code { font-family: 'DejaVu Sans Mono', monospace; }
+code { font-family: 'DejaVu Sans Mono', Menlo, monospace; }
 .pb { page-break-before: always; }
 .cover { text-align: center; padding-top: 40mm; }
 .cover h1 { border: none; font-size: 30pt; }

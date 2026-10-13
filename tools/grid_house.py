@@ -141,6 +141,30 @@ class Roof:
     def HK(self):
         return self.L2(D)
 
+    @property
+    def PE(self):
+        """Карнизный прогон — у конца стропила; под него заворачивают край тента."""
+        return self.TU - 25 * COS                    # наружная кромка прогона — у торца стропила
+
+    @property
+    def PALL(self):
+        return tuple(self.PU) + (self.PE,)
+
+
+PURLIN = (25, 50)            # прогон 25×50 плашмя: 25 по нормали к скату, 50 вдоль ската
+RIDGE_B = (25, -25)          # болты конька: от оси конька по Y (сквозь стойки обеих полуферм)
+
+
+def purlin_sides(kind):
+    """С каких сторон стропила опоры прогонов (+1 — X > T). У фронтонных — не со стороны обшивки;
+    у средних — с обеих: над средней фермой бывает стык прогонов, болт нужен каждому куску."""
+    return {'фронтон_0': (1,), 'фронтон_25': (-1,), 'средняя': (1, -1)}[kind]
+
+
+def purlin_xb(side):
+    """Ось болта опоры по X в координатах полуфермы."""
+    return T + D / 2 if side > 0 else -D / 2
+
 
 def half_truss(r, kind):
     """Полуферма: X — толщина 0..25, Y = -u (u от конька), Z от низа затяжки."""
@@ -151,6 +175,8 @@ def half_truss(r, kind):
     p.append(bar(f'затяжка_25х50х{r.CL}', '25×50', r.CL, chord, WOOD))
     pst = prism_x([(0, D), (D, D), (D, HK), (0, HK)], 0, T)
     pst = pst - cyl(BH, (T / 2, 1, (D + HK) / 2), (T / 2, -D - 1, (D + HK) / 2))
+    ridge_hole = cyl(BH, (-PLY_G - 2, -RIDGE_B[0], HK - 25), (T + PLY_G + 2, -RIDGE_B[0], HK - 25))
+    pst = pst - ridge_hole
     p.append(bar(f'стойка_фермы_25х50х{HK - D:.0f}', '25×50', HK - D, pst, WOOD2))
     raf = (r.TU - D) / COS
     p.append(bar(f'стропило_25х50х{raf:.0f}', '25×50', raf,
@@ -174,25 +200,37 @@ def half_truss(r, kind):
         gus[f'бабка_низ_{su}'] = [(su - 90, 0), (su + T + 90, 0), (su + T + 90, D + 90), (su - 90, D + 90)]
         gus[f'бабка_верх_{su}'] = [(su - 90, L1(su - 90) - 90), (su + T + 90, L1(su + T + 90) - 90),
                                    (su + T + 90, L2(su + T + 90)), (su - 90, L2(su - 90))]
+    # опоры прогонов: брусок 25×50×100 плашмя сбоку стропила, верх заподлицо со стропилом;
+    # прогон ложится на стропило и опору, болт М10×80 сквозь прогон и опору, барашек снизу
     t_, n_ = np.array([COS, -SIN]), np.array([SIN, COS])
-    for u0 in r.PU:
-        B = np.array([u0 + 12.5 * COS, L2(u0 + 12.5 * COS)])
-        q = [B, B + 25 * t_, B + 25 * t_ + 30 * n_, B + 30 * n_]
-        p.append(bar('лапка_прогона_25х25х30', '25×25', 30, prism_x([tuple(x) for x in q], 0, T), WOOD2, cut=False))
-    CUT[('25×50', 50)] += len(r.PU)
+    for side in purlin_sides(kind):
+        xs_ = (T, T + D) if side > 0 else (-D, 0)
+        xb = purlin_xb(side)
+        for u0 in r.PALL:
+            C = np.array([u0, L2(u0)])
+            Cb = C - (25 * t_ if u0 == r.PE else 0)       # у карнизного — сдвинута внутрь, в торец стропила
+            q = [Cb - 50 * t_, Cb + 50 * t_, Cb + 50 * t_ - T * n_, Cb - 50 * t_ - T * n_]
+            blk_ = prism_x([tuple(x) for x in q], *xs_)
+            h0, h1 = C + 5 * n_, C - (T + 5) * n_
+            blk_ = blk_ - cyl(BH, (xb, -h0[0], h0[1]), (xb, -h1[0], h1[1]))
+            p.append(bar('опора_прогона_25х50х100', '25×50', 100, blk_, WOOD2))
     sides = {'средняя': [(-PLY_G, 0), (T, T + PLY_G)], 'фронтон_0': [(T, T + PLY_G)], 'фронтон_25': [(-PLY_G, 0)]}[kind]
     for x0, x1 in sides:
         for g, pts in gus.items():
-            p.append(P(prism_x(pts, x0, x1), f'косынка_фанера_{PLY_G}', 'фанера', (240, 220, 175)))
+            gs = prism_x(pts, x0, x1)
+            if g == 'вершина':
+                gs = gs - ridge_hole
+            p.append(P(gs, f'косынка_фанера_{PLY_G}', 'фанера', (240, 220, 175)))
     if kind != 'средняя':
         x0, x1 = (-PLY, 0) if kind == 'фронтон_0' else (T, T + PLY)
         e = r.SH + PLY
-        p.append(P(prism_x([(0, 0), (e, 0), (e, L2(e)), (D, HK), (0, HK)], x0, x1), f'обшивка_фронтона_ФСФ_{PLY}', 'фанера', PLYC))
+        sh = prism_x([(0, 0), (e, 0), (e, L2(e)), (D, HK), (0, HK)], x0, x1) - ridge_hole
+        p.append(P(sh, f'обшивка_фронтона_ФСФ_{PLY}', 'фанера', PLYC))
     return p
 
 
 ROOFS = {1: Roof(1600, 1700, 1980, (650, 1320), ()),
-         2: Roof(3150, 3250, 3530, (700, 1400, 2100, 2800), (1900,))}
+         2: Roof(3150, 3250, 3530, (620, 1400, 2100, 2800), (1900,))}   # 620: опора прогона мимо косынки подкоса
 
 
 # ------------------------------------------------------------------ дом
@@ -283,33 +321,99 @@ def build(cfg):
         house.append(('крыша', f'ферма_{k + 1}', tr))
     zr = ZP + r.HK
     cuts_x = [-150] + sorted(x for x in grid_x if POST < x < SX - POST) + [SX + 150]
-    for a, c in zip(cuts_x[:-1], cuts_x[1:]):
-        rp = [P(box(a, c, YR - D, YR + D, zr, zr + 50), f'конёк_50х100х{c - a:.0f}', 'дерево', FRAME)]
-        for xc in xs:
-            for xa in (xc - T / 2 - PLY_G - 1 - T, xc + T / 2 + PLY_G + 1):
-                if a <= xa and xa + T <= c:
-                    rp.append(bar('бобышка_конька_25х50х100', '25×50', 100, box(xa, xa + T, YR - D, YR + D, zr - 50, zr), WOOD2))
-        CUT[('50×100', round(c - a))] += 1
-        house.append(('крыша', 'конёк', rp))
     n_ = np.array([SIN, COS])
+    t_ = np.array([COS, -SIN])
+    side_of = {}                                          # x фермы -> (опора южной полуфермы, северной), мировые X
+    for k, xc in enumerate(xs):
+        x0 = xc - T / 2
+        first, last = k == 0, k == len(xs) - 1
+        kinds = ('фронтон_0', 'фронтон_25') if first else ('фронтон_25', 'фронтон_0') if last else ('средняя', 'средняя')
+        side_of[xc] = ([x0 + purlin_xb(sd) for sd in purlin_sides(kinds[0])],
+                       [x0 + T - purlin_xb(sd) for sd in purlin_sides(kinds[1])])
+    for a, c in zip(cuts_x[:-1], cuts_x[1:]):
+        rb = box(a, c, YR - D, YR + D, zr, zr + 50)
+        rp, bolts_ = [], []
+        for xc in xs:
+            xl = xc - T / 2 - PLY_G - 1 - T
+            for xa in (xl, xc + T / 2 + PLY_G + 1):
+                if not (a <= xa and xa + T <= c):
+                    continue
+                bb = box(xa, xa + T, YR - D, YR + D, zr - 50, zr)
+                for dy in RIDGE_B:
+                    bb = bb - cyl(BH, (xa - 1, YR - dy, zr - 25), (xa + T + 1, YR - dy, zr - 25))
+                rp.append(bar('бобышка_конька_25х50х100', '25×50', 100, bb, WOOD2))
+            if a <= xl < c:                               # сквозь обе бобышки и стойки полуферм
+                for dy in RIDGE_B:
+                    bolts_.append(bolt((xl - 5, YR - dy, zr - 25), (1, 0, 0), 130, 'барашек'))
+        rp.insert(0, P(rb, f'конёк_50х100х{c - a:.0f}', 'дерево', FRAME))
+        CUT[('50×100', round(c - a))] += 1
+        house.append(('крыша', 'конёк', rp + bolts_))
+    # прогоны плашмя, на каждом пересечении со стропилом — болт М10×80 в опору
     for side in (1, -1):
-        for u0 in r.PU:
-            du = 12.5 * COS
+        y_of = lambda u, s=side: YR - s * u
+        for u0 in r.PALL:
+            du = PURLIN[1] / 2 * COS
             A, B2 = np.array([u0 - du, r.L2(u0 - du)]), np.array([u0 + du, r.L2(u0 + du)])
-            q = [A, B2, B2 + 50 * n_, A + 50 * n_]
+            q = [A, B2, B2 + PURLIN[0] * n_, A + PURLIN[0] * n_]
+            top = np.array([u0, r.L2(u0)]) + PURLIN[0] * n_
             for a, c in zip(cuts_x[:-1], cuts_x[1:]):
-                pr = prism_x([tuple(x) for x in q], a, c, lambda u, s=side: YR - s * u).moved(Location((0, 0, ZP)))
+                pr = prism_x([tuple(x) for x in q], a, c, y_of).moved(Location((0, 0, ZP)))
+                bolts_ = []
+                for xc in xs:
+                    xb = [x for x in side_of[xc][0 if side > 0 else 1] if a < x < c]
+                    if not xb:
+                        continue
+                    p0 = np.array([xb[0], y_of(top[0] + 5 * n_[0]), ZP + top[1] + 5 * n_[1]])
+                    d = np.array([0, side * n_[0], -n_[1]])
+                    pr = pr - cyl(BH, p0, p0 + d * (PURLIN[0] + 10))
+                    bolts_.append(bolt(tuple(p0 + d * 5), d, 80, 'барашек'))
                 CUT[('25×50', round(c - a))] += 1
-                house.append(('крыша', 'прогон', [P(pr, f'прогон_25х50х{c - a:.0f}', 'дерево', (185, 140, 90))]))
-        top = lambda u: r.L2(u) + 50 / COS + 1
-        q = [(0, top(0)), (r.TU + 50, top(r.TU + 50)), (r.TU + 50, top(r.TU + 50) + 1), (0, top(0) + 1)]
-        tent = prism_x(q, -175, SX + 175, lambda u, s=side: YR - s * u).moved(Location((0, 0, ZP)))
-        house.append(('крыша', 'тент', [P(tent, 'тент', 'фанера', (70, 110, 90))]))
-    tw, tl = (SX + 350) / 1000, 2 * (r.TU + 50) / COS / 1000
+                nm = 'прогон_карнизный' if u0 == r.PE else 'прогон'
+                house.append(('крыша', 'прогон', [P(pr, f'{nm}_25х50х{c - a:.0f}', 'дерево', (185, 140, 90))] + bolts_))
+    # тент: через конёк по прогонам, край завёрнут под карнизный прогон; люверсы — резинками
+    TP = 1                                                # толщина тента в модели
+    lift = PURLIN[0] / COS + 9                            # над стропилом: прогон + головки болтов
+    tz = lambda u: r.L2(u) + lift
+    du = PURLIN[1] / 2 * COS
+    H0 = r.HK + 50 + 1                                    # по верху конька
+    eb = np.array([r.PE + du, r.L2(r.PE + du)])           # наружная нижняя кромка карнизного прогона
+    lt = eb + (TP + 1) * t_ + lift * COS * n_             # где край тента загибается вниз
+    u1 = r.PU[0] - du
+    prof = [(0, H0 + TP), (D, H0 + TP), (u1, tz(u1) + TP), (lt[0] + TP * COS, tz(lt[0]) + TP),
+            tuple(eb + (2 * TP + 1) * t_), tuple(eb + (TP + 1) * t_), tuple(lt), (u1, tz(u1)), (D, H0), (0, H0)]
+    ties = []
+
+    def ring(y_of, u0, x, outer=0, k=2, th=4, w=8):
+        """Резинка через люверс вокруг прогона в точке x (outer — на сколько выступает завёрнутый край)."""
+        c = np.array([u0, r.L2(u0)])
+        hw, hn = PURLIN[1] / 2, lift * COS + TP
+        rect = lambda e: [tuple(c + a * t_ + b_ * n_) for a, b_ in
+                          ((-hw - e, -e), (hw + outer + e, -e), (hw + outer + e, hn + e), (-hw - e, hn + e))]
+        o = prism_x(rect(k + th), x - w / 2, x + w / 2, y_of) - prism_x(rect(k), x - w / 2 - 1, x + w / 2 + 1, y_of)
+        return P(o.moved(Location((0, 0, ZP))), 'резинка_с_шариком', 'сталь', (30, 30, 35))
+
+    for side in (1, -1):
+        y_of = lambda u, s=side: YR - s * u
+        house.append(('крыша', 'тент', [P(prism_x(prof, -175, SX + 175, y_of).moved(Location((0, 0, ZP))),
+                                          'тент', 'фанера', (70, 110, 90))]))
+        # по карнизу — через ~0,5 м, в стороне от ферм; на фронтонах — вокруг концов прогонов
+        n_e = max(3, round((SX + 260) / 500) + 1)
+        for x in np.linspace(-130, SX + 130, n_e):
+            if min(abs(x - xc) for xc in xs) < 130:
+                x += 150 if x < SX / 2 else -150
+            ties.append(ring(y_of, r.PE, x, outer=2 * TP + 1))
+        for u0 in r.PU:
+            for x in (-130, SX + 130):
+                ties.append(ring(y_of, u0, x))
+    for x in (-130, SX + 130):                            # вокруг концов конька
+        o = box(x - 4, x + 4, YR - D - 6, YR + D + 6, zr - 6, ZP + H0 + TP + 6) - \
+            box(x - 5, x + 5, YR - D - 2, YR + D + 2, zr - 2, ZP + H0 + TP + 2)
+        ties.append(P(o, 'резинка_с_шариком', 'сталь', (30, 30, 35)))
+    house.append(('крыша', 'резинки', ties))
+    tw, tl = (SX + 350) / 1000, 2 * (lt[0] + 60) / COS / 1000
     HW[f'Тент тарпаулин ≥ {math.ceil(tw)}×{math.ceil(tl)} м'] += 1
-    HW['Ремень стяжной с храповиком 6 м'] += 2 * max(1, NX)
-    for k in ('глухой', 'окно', 'дверь'):
-        pass
+    HW['Люверс 10 мм (поставить в тент)'] += len(ties)
+    HW['Резинка с шариком 20 см'] += len(ties)
     return blocks, house, (SX, SY, zr + 50)
 
 
@@ -322,7 +426,7 @@ PRICE_LUMBER = {   # средние цены строймагов РФ, ₽ за
 PRICE = {'Болт М10×80': 28, 'Болт М10×130': 57, 'Болт М10×150': 54, 'Гайка М10': 6.6,
          'Гайка-барашек М10': 17, 'Шайба М10 увеличенная': 4.6, 'Гайка врезная (футорка) М10': 35,
          'Уголок крепёжный усиленный KUU 90×90×40': 46, 'Арматура Ø12 (кол 1 м)': 80,
-         'Ремень стяжной с храповиком 6 м': 510, 'Петля карточная 100 мм': 160,
+         'Люверс 10 мм (поставить в тент)': 6, 'Резинка с шариком 20 см': 20, 'Петля карточная 100 мм': 160,
          'Ручка-скоба дверная': 140, 'Шпингалет накладной': 93}
 FSF3, FK9, TENT_M2, CONSUM_3x3 = 370, 885, 96.5, 5940
 
@@ -455,7 +559,7 @@ def ascii_plan(cfg):
     return '\n'.join(rows)
 
 
-T_MIN = dict(setup=10, post=3, lez=3, beam=4, span=6, truss_m=5, truss_b=8, ridge_bay=6, tent_bay=8)
+T_MIN = dict(setup=10, post=3, lez=3, beam=4, span=6, truss_m=5, truss_b=8, ridge_bay=4, roof_bolt=0.5, tent_bay=6, tie=0.3)
 
 
 def assembly(name, cfg, house, dims, out):
@@ -483,8 +587,10 @@ def assembly(name, cfg, house, dims, out):
     t['Верхняя обвязка'] = T_MIN['beam'] * cnt['обвязка']
     t['Пролёты'] = T_MIN['span'] * sum(v for k, v in cnt.items() if k.startswith('пролёт'))
     t['Фермы'] = (T_MIN['truss_b'] if big else T_MIN['truss_m']) * trusses
-    t['Конёк, прогоны'] = T_MIN['ridge_bay'] * NX
-    t['Тент, ремни'] = T_MIN['tent_bay'] * NX + 5
+    roof_bolts = sum(1 for _, b_, parts in house if b_ in ('конёк', 'прогон') for q in parts if q.name.startswith('болт'))
+    ties = sum(len(parts) for _, b_, parts in house if b_ == 'резинки')
+    t['Конёк, прогоны'] = T_MIN['ridge_bay'] * NX + round(T_MIN['roof_bolt'] * roof_bolts)
+    t['Тент, резинки'] = T_MIN['tent_bay'] * NX + 3 + round(T_MIN['tie'] * ties)
     total = sum(t.values())
     spans = ', '.join(f'{v} × «{k.split()[1]}»' for k, v in cnt.items() if k.startswith('пролёт'))
     L = [f'# Сборка дома {name}', '',
@@ -516,16 +622,19 @@ def assembly(name, cfg, house, dims, out):
                        'торцами (фанерой наружу), остальные через 1,55 м. Пяты — болтами М10×80 в футорки: на линиях '
                        'стоек — в верх стоек, между ними — в середину обвязок.' + (
                            ' Большие фермы поднимать втроём; средняя линия стоек держит их под коньком.' if big else '')),
-        ('шаг4_крыша', f'**Конёк** ({cnt["конёк"]} куск.) на верх ферм — бобышками по бокам; **прогоны** '
-                       f'({cnt["прогон"]} куск.) — в лапки стропил; **тент** через конёк, края к люверсам/лежням; '
-                       f'**ремни** ({2 * max(1, NX)} шт.) через крышу под лежни.'),
+        ('шаг4_крыша', f'**Конёк** ({cnt["конёк"]} куск.) на верх ферм — бобышками по бокам; на каждой ферме '
+                       f'2 болта М10×130 сквозь бобышки и стойки полуферм. **Прогоны** ({cnt["прогон"]} куск., '
+                       f'нижние — карнизные) — плашмя поперёк стропил, на каждом пересечении болт М10×80 сверху '
+                       f'сквозь прогон в опору стропила, барашек снизу ({roof_bolts - 2 * trusses} шт.). '
+                       f'**Тент** через конёк, край завернуть под карнизный прогон; через люверсы — резинки с шариком '
+                       f'вокруг карнизного прогона и концов прогонов и конька ({ties} шт.).'),
     ]
     for i, (img, txt) in enumerate(steps, 1):
         L.append(f'{i}. {txt}')
         if img:
             L += ['', f'   ![]({"img/" + img}.png)', '']
     L += ['', '## Болты на площадке', '', '| Болт | Где | Шт. |', '|---|---|---|']
-    where = {'основание': 'уголки лежней (низ стоек)', 'каркас': 'уголки обвязок (верх стоек)', 'пролёты': 'пролёты к стойкам и обвязке', 'крыша': 'фермы'}
+    where = {'основание': 'уголки лежней (низ стоек)', 'каркас': 'уголки обвязок (верх стоек)', 'пролёты': 'пролёты к стойкам и обвязке', 'крыша': 'фермы, конёк, прогоны'}
     for (gr, k), n in sorted(bolts.items()):
         L.append(f'| {k.replace("х", "×")} | {where.get(gr, gr)} | {n} |')
     L += [f'| | **всего** | **{sum(bolts.values())}** |', '',
@@ -533,7 +642,7 @@ def assembly(name, cfg, house, dims, out):
     L += [f'| {k} | {v} |' for k, v in t.items()]
     L += [f'| **Итого** | **≈ {total} ({total / 60:.1f} ч)** |', '',
           'Время — оценка по нормам на операцию, вживую не проверено. Втроём — примерно на треть быстрее.', '',
-          '## Разборка', '', 'Обратный порядок: ремни, тент → прогоны, конёк → фермы (разобрать на полуфермы) → '
+          '## Разборка', '', 'Обратный порядок: резинки, тент → прогоны, конёк → фермы (разобрать на полуфермы) → '
           'пролёты → обвязка → стойки → колья, лежни.', '']
     open(f'{out}/СБОРКА.md', 'w').write('\n'.join(L))
     return total

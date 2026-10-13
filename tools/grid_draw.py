@@ -15,7 +15,7 @@ def main(name, out):
     spans = sel(lambda gr, b: gr == 'пролёты')
     trusses = sel(lambda gr, b: b.startswith('ферма'))
     rest = sel(lambda gr, b: b in ('конёк', 'прогон'))
-    tent = sel(lambda gr, b: b == 'тент')
+    tent = sel(lambda gr, b: b in ('тент', 'резинки'))
     W = 1200
     render(items_of(base + frame + spans + trusses + rest + tent, hide=hide), f'{out}/дом.png', az=-35, el=22, size=W,
            title=f'Дом {name} в сборе')
@@ -28,7 +28,7 @@ def main(name, out):
     steps = [('шаг1_каркас', '1. Каркас: стойки, лежни, обвязка', [], base + frame),
              ('шаг2_пролёты', '2. Пролёты по периметру', base + frame, spans),
              ('шаг3_фермы', '3. Фермы', base + frame + spans, trusses),
-             ('шаг4_крыша', '4. Конёк, прогоны, тент', base + frame + spans + trusses, rest + tent)]
+             ('шаг4_крыша', '4. Конёк, прогоны, тент на резинках', base + frame + spans + trusses, rest + tent)]
     for fn, t, old, new in steps:
         render(items_of(old, grey=True, hide=hide) + items_of(new, hide=hide, sheath_alpha=200 if 'крыша' in fn else 255),
                f'{out}/{fn}.png', az=-35, el=28, size=1000, title=t)

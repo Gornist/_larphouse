@@ -13,7 +13,7 @@
 import collections, math, os, sys
 import numpy as np
 from build123d import (Box, Compound, Cylinder, Face, Location, Vector, Wire,
-                       Axis, Align, extrude)
+                       Axis, Align, Plane, Solid, extrude)
 
 sys.path.insert(0, os.path.dirname(__file__))
 from step_io import save_step
@@ -68,6 +68,8 @@ def box(x0, x1, y0, y1, z0, z1):
 def cyl(d, p0, p1):
     p0, p1 = np.array(p0, float), np.array(p1, float)
     v = p1 - p0
+    if np.count_nonzero(np.abs(v) > 1e-9) > 1:          # наклонный (болты прогонов — по нормали к скату)
+        return Solid.make_cylinder(d / 2, float(np.linalg.norm(v)), Plane(origin=tuple(p0), z_dir=tuple(v)))
     c = Cylinder(d / 2, np.linalg.norm(v), align=(Align.CENTER, Align.CENTER, Align.MIN))
     ax = np.argmax(np.abs(v))
     if ax == 0:
@@ -102,7 +104,9 @@ def bolt(p0, d, L, nut):
         HW['Гайка-барашек М10'] += 1
     elif nut == 'гайка':
         HW['Гайка М10'] += 1
-    return P(cyl(10, p0, p0 + d * L), f'болт_М10х{L}', 'сталь', (60, 60, 60))
+    q = P(cyl(10, p0, p0 + d * L), f'болт_М10х{L}', 'сталь', (60, 60, 60))
+    q.axis = (tuple(p0), tuple(p0 + d * L))           # для проверки (tools/check_house.py)
+    return q
 
 
 def futorka(x, y, z_top, depth=25):
@@ -349,7 +353,13 @@ def compound(parts, label):
 
 
 def place(parts, loc):
-    return [P(q.solid.moved(loc), q.name, q.mat, q.color) for q in parts]
+    out = []
+    for q in parts:
+        m = P(q.solid.moved(loc), q.name, q.mat, q.color)
+        if hasattr(q, 'axis'):
+            m.axis = tuple(tuple((loc * Location(p)).position) for p in q.axis)
+        out.append(m)
+    return out
 
 
 # стороны: (поворот, начало системы «стены»: s вдоль стены, o внутрь от наружной грани)

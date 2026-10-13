@@ -10,8 +10,12 @@ from build123d import Location
 sys.path.insert(0, os.path.dirname(__file__))
 import v5_house as v
 
-FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+def _font(*paths):
+    return next((p for p in paths if os.path.exists(p)), paths[-1])
+
+
+FONT_B = _font('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/System/Library/Fonts/Supplemental/Arial Bold.ttf')
+FONT = _font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/System/Library/Fonts/Supplemental/Arial.ttf')
 GREY = (205, 205, 205)
 _tess = {}
 
