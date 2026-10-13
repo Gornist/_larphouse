@@ -84,6 +84,16 @@ def estimate(h):
     L.append(f'| Фанера ФК 9 мм 1525×1525 (косынки) | {sheets9} | {FK9} | {FK9 * sheets9:,.0f} |')
     total['Фанера'] += FSF3 * sheets3 + FK9 * sheets9
     for k, n in sorted(hw.items()):
+        if k.startswith('Уголок г/к'):
+            m, pr = math.ceil(n * 0.043), OTHER['angle_m']        # отрезок 40 + пропил 3
+            L.append(f'| Уголок г/к 63×63×6 (нарезать {n} шт по 40 мм) | {m} м | ≈ {pr} | {pr * m:,.0f} |')
+            total['Крепёж'] += pr * m
+            continue
+        if k.startswith('Футорка'):
+            packs = math.ceil(n / 40)
+            pr = OTHER['epoxy_pack']
+            L.append(f'| Клей эпоксидный ЭДП 280 г (футорки) | {packs} шт | ≈ {pr} | {pr * packs:,.0f} |')
+            total['Крепёж'] += pr * packs
         if k.startswith('Тент'):
             pr = OTHER['tent_m2'] * tw * tl
             L.append(f'| {k} | 1 | ≈ {pr:,.0f} | {pr:,.0f} |')
@@ -92,10 +102,10 @@ def estimate(h):
         pr = PRICE.get(k)
         if pr is None:
             continue
-        q = math.ceil(n * 1.1) if k.startswith(('Болт', 'Гайка', 'Шайба')) else n
+        q = math.ceil(n * 1.1) if k.startswith(('Болт', 'Гайка', 'Шайба', 'Футорка')) else n
         unit = 'м' if 'Арматура' in k else 'шт'
         L.append(f'| {k} | {q} {unit} | {pr} | {pr * q:,.0f} |')
-        total['Крепёж' if k.startswith(('Болт', 'Гайка', 'Шайба', 'Уголок')) else 'Прочее'] += pr * q
+        total['Крепёж' if k.startswith(('Болт', 'Гайка', 'Шайба', 'Футорка')) else 'Прочее'] += pr * q
     L.append(f'| Саморезы, клей D3, антисептик | | ≈ | {consum:,.0f} |')
     total['Прочее'] += consum
     s = sum(total.values())

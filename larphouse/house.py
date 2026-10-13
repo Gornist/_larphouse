@@ -77,7 +77,7 @@ def build(key):
     for d, i, j, sg, per, kind in edges(cfg):
         loc = edge_loc(d, i, j, sg)
         nm = f'{d}{i}{j}'
-        house.append(('основание', f'лежень_{nm}', place(blk('лежень', lezhen(d)), loc * Location((POST, 0, 0)))))
+        house.append(('основание', f'лежень_{nm}', place(blk('лежень', lezhen()), loc * Location((POST, 0, 0)))))
         if per:
             house.append(('основание', f'колья_{nm}', place(stakes(), loc * Location((POST, 0, 0)))))
         house.append(('каркас', f'обвязка_{nm}', place(blk('обвязка', beam(d)), loc * Location((POST, 0, 0)))))
